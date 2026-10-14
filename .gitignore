@@ -1,0 +1,39 @@
+# Personal inventory, photos, research, backups and listing exports
+/data/
+/inbox/
+/exports/
+/*.json
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[pP][nN][gG]
+*.[hH][eE][iI][cC]
+*.[hH][eE][iI][fF]
+*.[wW][eE][bB][pP]
+*.[gG][iI][fF]
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.zip
+
+# Local credentials and agent configuration
+.env
+.env.*
+!.env.example
+.aws/
+.ssh/
+.codex/
+.agents/
+
+# Python environment and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# macOS metadata
+.DS_Store
+._*

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vinted Werkstatt</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<body>
+<aside class="sidebar"><a class="logo" href="/">v<span>·</span></a><div class="brand">Deine Vinted<br>Werkstatt</div><p class="subtitle">Weniger eintippen.<br>Mehr Platz schaffen.</p><nav><button class="nav active" data-view="items">Artikel <span id="count-items">0</span></button><button class="nav" data-view="queue">Neue Fotos <span id="count-queue">0</span></button></nav><div class="side-bottom"><span class="dot"></span> Lokal auf deinem Mac<p>Fotos und Fortschritt bleiben<br>in deinem Projektordner.</p></div></aside>
+<main><header><div><p class="eyebrow">VOM FOTOSTAPEL ZUR ANZEIGE</p><h1 id="page-title">Deine Artikel, gut vorbereitet.</h1><p id="page-subtitle">Einmal erfassen. In Ruhe prüfen. Dann einstellen.</p></div><button id="scan" class="button secondary">＋ Neue Fotos einlesen</button></header>
+<section id="stats" class="stats"></section>
+<section class="toolbar"><div class="tabs" id="tabs"><button data-filter="all" class="selected">Alle</button><button data-filter="draft">In Prüfung</button><button data-filter="ready">Bereit</button><button data-filter="published">Eingestellt</button><button data-filter="sold">Verkauft</button><button data-filter="archived">Archiv</button></div><input id="search" type="search" placeholder="Artikel suchen …" aria-label="Artikel suchen"></section>
+<section id="items-view" class="workspace"><div id="list" class="item-list"></div><section id="editor" class="editor"></section></section>
+<section id="queue-view" hidden><div class="queue-intro"><div><h2>Der nächste Stapel beginnt hier.</h2><p>Neue Bilder in den Ordner <strong>inbox</strong> legen und einlesen. Schreib anschließend im Chat: „Bereite die neuen Vinted-Fotos vor.“</p></div><a class="button secondary" href="/api/manifest" download>Analyseliste herunterladen</a></div><div class="queue-actions"><button class="button" id="create">Aus Auswahl einen Artikel erstellen</button><select id="queue-destination" aria-label="Fotos zuordnen"></select><button class="button secondary" id="assign">Zuordnen</button></div><div id="queue" class="photo-grid"></div></section>
+<footer>Du entscheidest, wann eine Anzeige fertig ist. Das Veröffentlichen erfolgt in Vinted.</footer></main>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+</body></html>

@@ -41,6 +41,22 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.store.ingest()['new'], 0)
         self.assertEqual(Store(self.root).state()['photo_count'], 1)
 
+    def test_ingest_migrates_existing_assigned_inbox_original(self):
+        original = self.image('inbox/legacy.jpg')
+        content = original.read_bytes()
+        self.store.ingest()
+        pid = self.store.state()['queue'][0]['id']
+        item_id = self.store.apply({'groups': [self.group([pid])]})[0]
+        target = self.root / 'bearbeitet' / item_id / (pid[:12] + '-legacy.jpg')
+        target.rename(original)
+        with self.store.connect() as db:
+            db.execute('UPDATE photos SET path=? WHERE id=?', (str(original.resolve()), pid))
+        result = Store(self.root).ingest()
+        self.assertFalse(result['errors'])
+        self.assertFalse(original.exists())
+        self.assertEqual(target.read_bytes(), content)
+        self.assertFalse(self.store.state()['items'][0]['photos'][0]['archive_pending'])
+
     def test_over_20_items_and_restart(self):
         for i in range(110):
             self.image(f'{i}.png', (i, 120, 50))
@@ -112,9 +128,34 @@ class PipelineTests(unittest.TestCase):
 
     def test_invalid_values_and_sources(self):
         for payload in [{'price': float('nan')}, {'price':True}, {'price': -1},
-                        {'sources':[{'url':'javascript:alert(1)'}]}, {'title':3}]:
+                        {'price':0}, {'sources':[{'url':'javascript:alert(1)'}]}, {'title':3},
+                        {'listing_url':'https://example.vinted.de/listing'},
+                        {'listing_url':'https://www.kleinanzeigen.de.evil.test/listing'}]:
             with self.assertRaises(ValueError):
                 self.store.validate(payload)
+
+    def test_kleinanzeigen_giveaway_ready_and_export(self):
+        self.image('craft.jpg')
+        self.store.ingest()
+        photo = self.store.state()['queue'][0]['id']
+        group = self.group([photo])
+        group['item'].update(platform='kleinanzeigen',price_type='free',price=0,
+                             listing_url='https://www.kleinanzeigen.de/s-anzeige/example/1')
+        item_id = self.store.apply({'groups':[group]})[0]
+        self.store.update(item_id, {'status':'ready'}, 1)
+        with zipfile.ZipFile(io.BytesIO(self.store.export(item_id))) as archive:
+            data = json.loads(archive.read('Artikeldaten.json'))
+            self.assertEqual(data['price'], 0)
+            self.assertEqual(data['price_type'], 'free')
+            self.assertEqual(data['platform'], 'kleinanzeigen')
+        for invalid in [{'platform':'vinted','price_type':'free','price':0},
+                        {'platform':'both','price_type':'free','price':0},
+                        {'platform':'kleinanzeigen','price_type':'free','price':5},
+                        {'platform':'kleinanzeigen','price_type':'free','price':False},
+                        {'platform':'kleinanzeigen','price_type':'free','price':float('nan')},
+                        {'platform':'kleinanzeigen','price_type':'free','price':None}]:
+            with self.assertRaises(ValueError):
+                self.store.validate(invalid)
 
     def test_cover_order_persists_and_exports_first(self):
         self.image('first.jpg', 'red')
@@ -137,6 +178,76 @@ class PipelineTests(unittest.TestCase):
             with Image.open(io.BytesIO(archive.read('Fotos/01.jpg'))) as im:
                 red, green, blue = im.getpixel((20,20))
                 self.assertGreater(blue, red+100)
+
+    def test_inbox_originals_move_after_assignment_and_export_after_restart(self):
+        original = self.image('inbox/chair.jpg', 'blue')
+        content = original.read_bytes()
+        self.image('inbox/unassigned.jpg', 'green')
+        root_photo = self.image('root.jpg')
+        self.store.ingest()
+        ids = {p['filename']:p['id'] for p in self.store.state()['queue']}
+        item_id = self.store.apply({'groups':[self.group([ids['chair.jpg'],ids['root.jpg']])]})[0]
+        target = self.root/'bearbeitet'/item_id/(ids['chair.jpg'][:12]+'-chair.jpg')
+        self.assertFalse(original.exists())
+        self.assertEqual(target.read_bytes(), content)
+        self.assertTrue(root_photo.exists())
+        self.assertTrue((self.root/'inbox/unassigned.jpg').exists())
+        restarted = Store(self.root)
+        self.assertEqual(restarted.ingest()['new'], 0)
+        self.assertEqual(len(restarted.state()['queue']), 1)
+        restarted.update(item_id, {'status':'ready'}, 1)
+        with zipfile.ZipFile(io.BytesIO(restarted.export(item_id))) as archive:
+            self.assertEqual(len([x for x in archive.namelist() if x.startswith('Fotos/')]),2)
+
+    def test_archive_collision_does_not_overwrite_and_interrupted_move_recovers(self):
+        original = self.image('inbox/chair.jpg')
+        self.store.ingest()
+        pid = self.store.state()['queue'][0]['id']
+        item_id = self.store.apply({'groups':[self.group([pid])]})[0]
+        target = self.root/'bearbeitet'/item_id/(pid[:12]+'-chair.jpg')
+        # Simulate a move committed on disk before its database path was committed.
+        with self.store.connect() as db:
+            db.execute('UPDATE photos SET path=? WHERE id=?',(str(original),pid))
+        self.assertEqual(self.store.organize_photos()['errors'], [])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT path FROM photos WHERE id=?',(pid,)).fetchone()['path'],str(target.resolve()))
+        target.rename(original)
+        target.write_bytes(b'Unrelated existing file')
+        with self.store.connect() as db:
+            db.execute('UPDATE photos SET path=? WHERE id=?',(str(original),pid))
+        errors = self.store.organize_photos()['errors']
+        self.assertEqual(len(errors),1)
+        self.assertTrue(original.exists())
+        self.assertEqual(target.read_bytes(),b'Unrelated existing file')
+        self.assertTrue(self.store.state()['items'][0]['photos'][0]['archive_pending'])
+
+    def test_reassignment_moves_originals_and_reimported_duplicate_clears_inbox(self):
+        original = self.image('inbox/first.jpg')
+        self.image('inbox/second.jpg', 'blue')
+        self.store.ingest()
+        ids = {p['filename']:p['id'] for p in self.store.state()['queue']}
+        items = self.store.apply({'groups':[self.group([pid]) for pid in ids.values()]})
+        first_id = ids['first.jpg']
+        self.store.regroup([first_id],items[1])
+        target = self.root/'bearbeitet'/items[1]/(first_id[:12]+'-first.jpg')
+        self.assertTrue(target.exists())
+        self.store.regroup([first_id],None)
+        returned = self.root/'inbox'/(first_id[:12]+'-first.jpg')
+        self.assertTrue(returned.exists())
+        self.store.regroup([first_id],items[1])
+        shutil.copyfile(target,original)
+        self.assertEqual(self.store.ingest()['new'],0)
+        self.assertFalse(original.exists())
+        self.assertTrue(target.exists())
+
+    def test_failed_group_import_keeps_inbox_original(self):
+        original = self.image('inbox/first.jpg')
+        self.store.ingest()
+        pid = self.store.state()['queue'][0]['id']
+        with self.assertRaises(ValueError):
+            self.store.apply({'groups':[self.group([pid]),self.group([pid])]})
+        self.assertTrue(original.exists())
+        self.assertEqual(list((self.root/'bearbeitet').rglob('*')),[])
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "type": "analysis_response",
+  "itemID": "REPLACE_WITH_ITEM_ID_FROM_REQUEST",
+  "revision": 1,
+  "kind": "smartwatch",
+  "title": "Samsung Galaxy Watch6 Classic",
+  "brand": "Samsung",
+  "category": "Elektronik > Wearables",
+  "facts": [],
+  "questions": [
+    "Gehäusegröße und Bluetooth/LTE-Variante anhand der Modellangabe prüfen."
+  ],
+  "coverPhotoID": "REPLACE_WITH_SELECTED_PHOTO_ID",
+  "coverReason": "Alle mitgelieferten Bilder vergleichen; hier die echte Begründung ergänzen.",
+  "photoOrder": [
+    "REPLACE_WITH_ALL_SELECTED_REQUEST_PHOTO_IDS_IN_DESIRED_ORDER"
+  ]
+}

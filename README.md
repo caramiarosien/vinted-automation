@@ -23,13 +23,22 @@ Benötigt Python 3.11+ und Pillow. Falls Pillow fehlt: `python3 -m venv .venv` u
 1. Neue Bilder in `inbox/` legen. Unterordner sind möglich. Bestehende Bilder im Projektordner werden ebenfalls eingelesen. Die Originale bleiben erhalten.
 2. „Neue Fotos einlesen“ klicken. Identische Dateien werden anhand ihres Inhalts erkannt. Fotos mit gleichem Dateinamen und unterschiedlichem Inhalt bleiben getrennt. Ein Importfehler blockiert die anderen Fotos nicht und wird bei einem erneuten Import erneut versucht.
 3. Im Chat schreiben: „Bereite die neuen Vinted-Fotos vor.“ Die Analyse verwendet das aktuelle Manifest, betrachtet die Vorschaubilder, recherchiert Modell/Preis und importiert die Ergebnisse. Neue Fotos können auch einem bestehenden Entwurf zugeordnet werden; bei ähnlich aussehenden Gegenständen die Zuordnung prüfen.
+
+
 4. Entwurf prüfen. Offene Fragen beantworten, die Beschreibung ergänzen, Zustand und Preis eintragen. Rückfragen erst nach Klärung abhaken. Die Kategorie ist ein Vorschlag, den du in Vinted mit den dort verfügbaren Kategorien abgleichst.
 5. „Prüfung abschließen“ klicken und das Anzeigenpaket herunterladen. Es enthält ausgewählte Fotos als JPEG ohne EXIF-Daten, Titel, Beschreibung und Artikeldaten. Bei echten HEIC-Dateien, die nur per macOS-Konvertierung lesbar sind, verwendet der Export die 1600px-Vorschau.
 6. Selbst in Vinted eingeben und veröffentlichen. Danach Fortschritt auf „Eingestellt“ ändern und optional den Anzeigenlink eintragen.
 
+**„Bereit“ bedeutet: geprüft und zum Einstellen vorbereitet.** Erst die Veröffentlichung auf Vinted oder Kleinanzeigen macht eine Anzeige öffentlich. Der Ordner `bearbeitet/<Artikel-ID>/` zeigt nur, dass die Fotos einem Artikel zugeordnet wurden. Auch der manuell gesetzte Fortschritt „Eingestellt“ ist keine Live-Prüfung auf dem Marktplatz; den öffentlichen Anzeigenlink dort öffnen und kontrollieren.
+
+Sobald ein Foto einer Anzeige zugeordnet ist, wird die Originaldatei aus `inbox/` nach `bearbeitet/<Artikel-ID>/` verschoben. Der Dateiname bekommt einen Inhaltskennung-Präfix, damit gleichnamige Bilder sich nicht überschreiben. Nicht zugeordnete oder fehlerhafte Fotos bleiben in der Inbox. Die Werkstatt aktualisiert den gespeicherten Pfad; Export und Vorschau bleiben nutzbar. Bestehende zugeordnete Inbox-Fotos werden beim nächsten Einlesen ebenfalls einsortiert. Fotos aus dem Projekt-Hauptordner bleiben dort. Bei einer Zuordnungskorrektur wechseln Bilder zum passenden Artikelordner oder zurück in die Inbox. Unterbrochene Verschiebungen werden beim erneuten Einlesen anhand des Inhalts geprüft und fortgesetzt.
+
+
 „Ausgewählte Fotos verschieben“ unter einem Entwurf verschiebt die angehakten Anzeigenfotos zum gewählten Ziel oder zurück in die Warteschlange. Die internen Belegfotos sind zunächst nicht angehakt. Änderungen der Fotozuordnung sind nur bei Entwürfen möglich. Ein leer gewordener Entwurf kann auf „Archiv“ gesetzt werden.
 
 ## Titelbild und Preis
+
+Pro Artikel lässt sich die Zielplattform wählen: Vinted, Kleinanzeigen oder beide. Für Kleinanzeigen unterstützt der Preistyp „Zu verschenken“ den Wert 0 €. Verkaufspreise bleiben größer als 0 €. Im Export stehen `platform` (`vinted`, `kleinanzeigen`, `both`) und `price_type` (`fixed`, `negotiable`, `free`). Ein Verschenkangebot gilt ausschließlich für Kleinanzeigen und benötigt keine Marktpreisrecherche. Anzeigenlinks beider Plattformen können gespeichert werden.
 
 Bei der Analyse werden sämtliche Bilder pro Artikel verglichen. Das gespeicherte Titelbild steht in der Kartenansicht und im Export zuerst. Die Radioauswahl „Als Titelbild“ erlaubt eine manuelle Änderung; sie wählt das Foto auch für den Export aus. Ein Titelbild muss zum Artikel gehören und als Anzeigenfoto ausgewählt sein. `photo_order` legt die Reihenfolge weiterer Fotos fest. Deine ausdrückliche Auswahl hat Vorrang vor späteren Analysevorschlägen. Die Begründung steht unter den Fotos; sie ist eine Einschätzung der Präsentation, keine gemessene Klickprognose.
 
@@ -59,7 +68,7 @@ Bestehende Entwürfe: `Store().update(item_id, changes, revision)` verwenden; di
 
 `data/catalog.sqlite3` ist die dauerhafte Datenbank. `data/images/` enthält Vorschaubilder; `data/backups/` Datenbanksicherungen vor Analyseimporten und beim Start. Die Tabelle `events` hält Artikelversionen vor und nach Änderungen fest. Für eine vollständige Sicherung den gesamten Projektordner kopieren, einschließlich Originalfotos und `inbox/`. Für eine Wiederherstellung zuerst den Server stoppen; Datenbanken nie bei laufendem Server ersetzen.
 
-Das GitHub-Repository enthält den Programmcode, die Anleitung und die Tests. `.gitignore` schließt Fotos, `inbox/`, `data/`, `exports/`, lokale Zugangsdaten und Python-Umgebungen aus. Ein Git-Push sichert deshalb nicht deinen Artikelbestand. Beim Start einer frischen Installation werden die lokalen Datenordner automatisch angelegt.
+Das GitHub-Repository enthält den Programmcode, die Anleitung und die Tests. `.gitignore` schließt Fotos, `inbox/`, `bearbeitet/`, `data/`, `exports/`, lokale Zugangsdaten und Python-Umgebungen aus. Ein Git-Push sichert deshalb nicht deinen Artikelbestand. Beim Start einer frischen Installation werden die lokalen Datenordner automatisch angelegt. Eine vollständige Datensicherung muss auch `bearbeitet/` enthalten.
 
 ## Prüfungen
 
@@ -68,3 +77,7 @@ Das GitHub-Repository enthält den Programmcode, die Anleitung und die Tests. `.
 `node --check web/app.js`
 
 Die Oberfläche bindet ausschließlich an 127.0.0.1, stellt nur bekannte Vorschaubilder bereit und schützt Schreibaktionen mit einem Sitzungstoken. Passwörter oder Vinted-Sitzungen werden nicht benötigt. Das automatische Ausfüllen oder Veröffentlichen bei Vinted ist nicht implementiert.
+
+## iPhone-App
+
+Die native SwiftUI-Implementierung liegt unter [ios/README.md](ios/README.md). Sie ergänzt einen geführten Fragenablauf und einen lokalen Foto-/Anzeigenbestand. Der Prototyp läuft im eigenen iPhone-Simulator mit iOS 27; 48 XCTest-Kerntests und fünf UI-Tests bestehen. Eine Kopie des Mac-Bestands ist dort über die normale Wiederherstellung geladen. Der physische Gerätetest steht noch aus. Den aktuellen Stand dokumentiert [ios/TEST_REPORT.md](ios/TEST_REPORT.md). Die Mac-Werkstatt bleibt eigenständig nutzbar.

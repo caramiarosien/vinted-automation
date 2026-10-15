@@ -9,9 +9,11 @@ For new photos:
 3. Research identification and price with sources. Distinguish asking prices, refurbished retailer prices and confirmed sold prices. Leave uncertain attributes blank. Record unanswered questions. Device serial numbers are not public listing content; exclude label images from export by default.
 4. Import new groups with the documented JSON format in README.md and `pipeline.py apply`. Use `Store.update` with current revision for existing items. Do not bypass ready-state validation or overwrite user edits.
 5. Open or reload the local workshop for the user. Preserve the originals and SQLite state. Future images belong in `inbox/`; the project root also imports images for the initial user workflow.
+6. Assigned Inbox originals move automatically to `bearbeitet/<item-id>/`; inspect `organize_photos()` errors and `archive_pending` before reporting completion. Files remain byte-for-byte originals. Do not archive unassigned photos or root-level originals. Keep `bearbeitet/` out of GitHub along with the private inventory.
 
 Established user preferences:
 
+- Honor the requested target platform with `platform` (`vinted`, `kleinanzeigen`, `both`). For giveaways use `platform: kleinanzeigen`, `price_type: free`, `price: 0`; no price research is needed. Do not post to other platforms. Create the requested offer as a draft unless publishing was requested. Collection is a reasonable default for free local craft supplies; do not invent quantities, dimensions or an unused condition from open packaging.
 - Compare all images for the cover: recognizability in a small preview, appealing composition/perspective, meaningful accessories or original packaging, focus/light, and a usable crop. Packaging is beneficial when relevant, not a universal winner. Set `cover_photo_id`, `cover_reason`, and `photo_order`; don't use import order as the selection rule. Explicit user cover choices take priority and use `cover_origin: manual`.
 - Use concise, natural German descriptions: identity/variant, function if confirmed, a neutral condition sentence, and included accessories. Ordinary wear can read “Die Uhr hat Gebrauchsspuren. Bitte die Fotos anschauen.” Name relevant concrete defects when established. Don't amplify wear with unsupported adjectives or repeat uncertain visual observations in the public text.
 - Treat qualitative user battery assessments as valid seller statements (e.g. “Der Akku ist nach meiner Einschätzung in gutem Zustand”). Don't invent measured health percentages or runtime. Lack of an exact measurement alone is not a blocker. Private research notes and workflow questions stay outside the public description.
@@ -22,3 +24,11 @@ Established user preferences:
 - Recommend a supported starting asking price with negotiation room and a separate optional faster-sale strategy. Make clear that these are estimates, not promised proceeds or measured time-to-sale. The user prefers a reasonable asking price and does not want the two lowest offers to dictate the recommendation. Preserve any explicit user price choice when adding new evidence.
 
 Validation for code changes: `python3 -m unittest discover -s tests -v` and `node --check web/app.js`. The local server uses port 8765. Tests use separate temporary stores. Never perform experiments that change the user's article facts or status without restoring the original state.
+
+## Native iPhone workflow
+
+Native sources live in `ios/`. Read `ios/README.md` for exchange schema and limitations. No cloud/API integration or automatic publishing is authorized. Local OCR is a suggestion, not a full image analysis. Important condition/function/battery/accessory questions are choice cards within the app, and seller answers take precedence.
+
+For a received iOS analysis ZIP, use `ios/scripts/bridge.py inspect` to check its request before extracting. Inspect every selected image using image tools; research identity/price as above. Return `analysis-response.json` with schemaVersion 1, type analysis_response, the SAME itemID/revision and only allowed fields from the example. Do not import condition, description, status, platform or answers; the app owns those. photoOrder must contain exactly the selected request photo IDs. Private label pictures stay excluded unless deliberately selected. Do not bypass revision conflicts or write into the user's native backup/library as a shortcut.
+
+Core validation: `python3 ios/scripts/check_core.py` runs actual Swift test bodies via a direct temporary harness; it is not XCTest or an iOS UI build. With working Xcode also run `swift test --package-path ios/WerkstattCore` and `ios/scripts/build.sh`. Keep build artifacts, personal migration ZIPs, signing credentials and device inventories out of Git.

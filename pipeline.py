@@ -27,7 +27,8 @@ EXTENSIONS = {'.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp'}
 STATUSES = {'draft', 'ready', 'published', 'sold', 'archived'}
 FIELDS = {'title', 'description', 'brand', 'category', 'size', 'color', 'condition',
           'price', 'facts', 'questions', 'sources', 'notes', 'listing_url', 'status',
-          'cover_photo_id', 'cover_reason', 'cover_origin', 'photo_order', 'pricing_note'}
+          'cover_photo_id', 'cover_reason', 'cover_origin', 'photo_order', 'pricing_note',
+          'platform', 'price_type'}
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -45,6 +46,7 @@ class Store:
         self.data.mkdir(parents=True, exist_ok=True)
         (self.data / 'images').mkdir(exist_ok=True)
         (self.root / 'inbox').mkdir(exist_ok=True)
+        (self.root / 'bearbeitet').mkdir(exist_ok=True)
         with self.connect() as db:
             db.executescript('''
             CREATE TABLE IF NOT EXISTS photos (
@@ -109,9 +111,10 @@ class Store:
             return dimensions
 
     def ingest(self):
+        result = {'new': 0, 'known': 0, 'errors': []}
+        result['errors'].extend(self.organize_photos()['errors'])
         paths = [p for p in self.root.iterdir() if p.is_file() and p.suffix.lower() in EXTENSIONS]
         paths += [p for p in (self.root / 'inbox').rglob('*') if p.is_file() and p.suffix.lower() in EXTENSIONS]
-        result = {'new': 0, 'known': 0, 'errors': []}
         for p in sorted(paths):
             resolved = p.resolve()
             if not resolved.is_relative_to(self.root):
@@ -121,10 +124,15 @@ class Store:
             with self.connect() as db:
                 existing = db.execute('SELECT * FROM photos WHERE id=?', (digest,)).fetchone()
                 if existing and not existing['error']:
-                    if not Path(existing['path']).exists():
+                    if existing['item_id'] and resolved.is_relative_to(self.root / 'inbox'):
+                        db.execute('UPDATE photos SET path=? WHERE id=?', (str(resolved), digest))
+                    elif not Path(existing['path']).exists():
                         db.execute('UPDATE photos SET path=?, filename=? WHERE id=?', (str(resolved), p.name, digest))
-                    result['known'] += 1
-                    continue
+            if existing and not existing['error']:
+                result['known'] += 1
+                if existing['item_id'] and resolved.is_relative_to(self.root / 'inbox'):
+                    result['errors'].extend(self.organize_photos()['errors'])
+                continue
             error = None
             dimensions = (None, None)
             try:
@@ -141,9 +149,73 @@ class Store:
             result['new'] += int(existing is None)
         return result
 
-    @staticmethod
-    def photo(row):
-        return {k: row[k] for k in ('id', 'filename', 'width', 'height', 'imported', 'error', 'item_id', 'selected')}
+    def organize_photos(self):
+        """Move assigned inbox originals after the database transaction commits.
+
+        Deterministic targets and verified hashes recover an interrupted move.
+        Originals imported from the project root stay where they are.
+        """
+        result = {'moved': [], 'errors': []}
+        inbox = self.root / 'inbox'
+        processed = self.root / 'bearbeitet'
+        with self.connect() as db:
+            ids = [r['id'] for r in db.execute('SELECT id FROM photos WHERE error IS NULL')]
+        for pid in ids:
+            try:
+                with self.connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    row = db.execute('SELECT * FROM photos WHERE id=?', (pid,)).fetchone()
+                    source = Path(row['path']).resolve()
+                    if not (source.is_relative_to(inbox) or source.is_relative_to(processed)):
+                        continue
+                    folder = processed / row['item_id'] if row['item_id'] else inbox
+                    if not row['item_id'] and source.is_relative_to(inbox) and source.exists():
+                        continue
+                    target = folder / (pid[:12] + '-' + Path(row['filename']).name)
+                    if not folder.resolve().is_relative_to(self.root):
+                        raise ValueError('Fotoordner liegt außerhalb des Projekts.')
+                    if source == target and source.is_file():
+                        continue
+
+                    def matches(path):
+                        if not path.is_file() or not path.resolve().is_relative_to(self.root):
+                            return False
+                        with path.open('rb') as stream:
+                            return hashlib.file_digest(stream, 'sha256').hexdigest() == pid
+
+                    if not source.exists():
+                        candidates = [target]
+                        candidates += list(processed.rglob(pid[:12] + '-*'))
+                        candidates += list(inbox.rglob(pid[:12] + '-*'))
+                        source = next((p for p in candidates if matches(p)), source)
+                    if not matches(source):
+                        raise ValueError('Original fehlt oder wurde seit dem Import verändert.')
+                    folder.mkdir(parents=True, exist_ok=True)
+                    if target.exists() and target != source:
+                        if not matches(target):
+                            raise ValueError('Zieldatei existiert mit anderem Inhalt; nichts überschrieben.')
+                        # The identical original is already safely stored at the target.
+                        source.unlink()
+                    elif source != target:
+                        source.rename(target)
+                    db.execute('UPDATE photos SET path=? WHERE id=?', (str(target), pid))
+                    db.execute('INSERT INTO events(time,action,item_id,after) VALUES(?,?,?,?)',
+                               (now(), 'organize_photo', row['item_id'],
+                                json_text({'photo_id': pid, 'path': str(target.relative_to(self.root))})))
+                    result['moved'].append(str(target.relative_to(self.root)))
+            except (OSError, ValueError) as exc:
+                result['errors'].append({'filename': row['filename'], 'error': str(exc)})
+        return result
+
+    def photo(self, row):
+        result = {k: row[k] for k in ('id', 'filename', 'width', 'height', 'imported', 'error', 'item_id', 'selected')}
+        path = Path(row['path']).resolve()
+        result['archive_pending'] = bool(
+            (row['item_id'] and path.is_relative_to(self.root / 'inbox')) or
+            (not row['item_id'] and path.is_relative_to(self.root / 'bearbeitet')) or
+            (not path.exists() and (path.is_relative_to(self.root / 'inbox') or
+                                   path.is_relative_to(self.root / 'bearbeitet'))))
+        return result
 
     def state(self):
         with self.connect() as db:
@@ -156,6 +228,8 @@ class Store:
                 item.setdefault('cover_origin', 'analysis')
                 item.setdefault('photo_order', [])
                 item.setdefault('pricing_note', '')
+                item.setdefault('platform', 'vinted')
+                item.setdefault('price_type', 'fixed')
                 item.update(id=r['id'], revision=r['revision'], updated=r['updated'])
                 item['photos'] = [p for p in photos if p['item_id'] == r['id']]
                 ordering = {pid:index for index,pid in enumerate(item['photo_order'])}
@@ -179,7 +253,7 @@ class Store:
                   'color': '', 'condition': '', 'price': None, 'facts': [], 'questions': [],
                   'sources': [], 'notes': '', 'listing_url': '', 'status': 'draft',
                   'cover_photo_id': None, 'cover_reason': '', 'cover_origin': 'analysis',
-                  'photo_order': [], 'pricing_note': ''}
+                  'photo_order': [], 'pricing_note': '', 'platform': 'vinted', 'price_type': 'fixed'}
         result.update(payload)
         for key in ('title','description','brand','category','size','color','condition','notes','listing_url',
                     'cover_reason','pricing_note'):
@@ -195,9 +269,18 @@ class Store:
                 any(not isinstance(pid,str) for pid in result['photo_order']) or
                 len(set(result['photo_order'])) != len(result['photo_order'])):
             raise ValueError('Ungültige Fotoreihenfolge.')
+        if result['platform'] not in {'vinted', 'kleinanzeigen', 'both'}:
+            raise ValueError('Unbekannte Plattform.')
+        if result['price_type'] not in {'fixed', 'negotiable', 'free'}:
+            raise ValueError('Unbekannter Preistyp.')
         price = result['price']
-        if price is not None and (type(price) not in (int, float) or not 0 < price <= 100000):
-            raise ValueError('Preis muss größer als 0 sein.')
+        if result['price_type'] == 'free':
+            if result['platform'] != 'kleinanzeigen':
+                raise ValueError('Zu verschenken ist nur für Kleinanzeigen verfügbar.')
+            if type(price) not in (int, float) or price != 0:
+                raise ValueError('Zu verschenken benötigt einen Preis von 0 €.')
+        elif price is not None and (type(price) not in (int, float) or not 0 < price <= 100000):
+            raise ValueError('Verkaufspreis muss größer als 0 sein.')
         for key in ('facts', 'questions'):
             if not isinstance(result[key], list) or any(not isinstance(x,str) for x in result[key]):
                 raise ValueError('Ungültige Liste: ' + key)
@@ -208,9 +291,11 @@ class Store:
                 raise ValueError('Quelle benötigt eine URL.')
             if urlparse(source['url']).scheme not in ('http','https'):
                 raise ValueError('Quelle benötigt eine HTTP-URL.')
-        if result['listing_url'] and (urlparse(result['listing_url']).scheme != 'https' or
-                not (urlparse(result['listing_url']).hostname or '').endswith('.vinted.de')):
-            raise ValueError('Bitte einen https://www.vinted.de/... Anzeigenlink verwenden.')
+        if result['listing_url']:
+            link = urlparse(result['listing_url'])
+            allowed_hosts = {'www.vinted.de', 'vinted.de', 'www.kleinanzeigen.de', 'kleinanzeigen.de'}
+            if link.scheme != 'https' or link.hostname not in allowed_hosts:
+                raise ValueError('Bitte einen https-Anzeigenlink von Vinted oder Kleinanzeigen verwenden.')
         return result
 
     @staticmethod
@@ -230,7 +315,8 @@ class Store:
         for key, label in [('title','Titel'), ('description','Beschreibung'), ('condition','Zustand'), ('category','Kategorie')]:
             if not item.get(key, '').strip():
                 issues.append(label + ' fehlt')
-        if not item.get('price'):
+        if item.get('price') is None or (item.get('price') == 0 and
+                (item.get('price_type') != 'free' or item.get('platform') != 'kleinanzeigen')):
             issues.append('Preis fehlt')
         issues += item.get('questions', [])
         if not any(p['selected'] and not p['error'] for p in item.get('photos', [])):
@@ -273,6 +359,7 @@ class Store:
                 db.execute('INSERT INTO events(time,action,item_id,after) VALUES(?,?,?,?)',
                            (now(), 'create', item_id, json_text(payload)))
                 ids.append(item_id)
+        self.organize_photos()
         return ids
 
     def update(self, item_id, changes, revision, selections=None):
@@ -303,6 +390,7 @@ class Store:
                        (json_text(payload), now(), item_id))
             db.execute('INSERT INTO events(time,action,item_id,before,after) VALUES(?,?,?,?,?)',
                        (now(), 'update', item_id, row['payload'], json_text(payload)))
+        self.organize_photos()
         return self.state()
 
     def regroup(self, photo_ids, destination):
@@ -337,6 +425,7 @@ class Store:
                            (json_text(payload), now(), item_id))
             db.execute('INSERT INTO events(time,action,after) VALUES(?,?,?)',
                        (now(), 'regroup', json_text({'photos': photo_ids, 'destination': destination})))
+        self.organize_photos()
         return self.state()
 
     def export(self, item_id):
@@ -350,7 +439,7 @@ class Store:
             archive.writestr('Titel.txt', item['title'])
             archive.writestr('Beschreibung.txt', item['description'])
             archive.writestr('Artikeldaten.json', json_text({k:item.get(k) for k in
-                ('title','description','brand','category','size','color','condition','price','sources')}))
+                ('title','description','brand','category','size','color','condition','price','price_type','platform','sources')}))
             with self.connect() as db:
                 for index, photo in enumerate([p for p in item['photos'] if p['selected']], 1):
                     row = db.execute('SELECT path FROM photos WHERE id=?', (photo['id'],)).fetchone()

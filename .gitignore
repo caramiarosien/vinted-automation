@@ -1,6 +1,7 @@
 # Personal inventory, photos, research, backups and listing exports
 /data/
 /inbox/
+/bearbeitet/
 /exports/
 /*.json
 *.[jJ][pP][gG]
@@ -37,3 +38,16 @@ htmlcov/
 # macOS metadata
 .DS_Store
 ._*
+
+# Native build outputs and developer-local signing settings
+/ios/WerkstattCore/.build/
+/ios/WerkstattCore/.swiftpm/
+/ios/.build/
+/ios/DerivedData/
+**/xcuserdata/
+*.ipa
+*.xcarchive
+ios/TestResults/
+*.xcresult
+# Only this generated app branding image belongs to source control.
+!/ios/WerkstattApp/Assets.xcassets/AppIcon.appiconset/*.png
